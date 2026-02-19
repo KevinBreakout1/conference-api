@@ -1,135 +1,101 @@
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from search import query_database
+import sqlite3
 import math
 
 app = Flask(__name__)
 CORS(app)
 
+DB_NAME = "conferences.db"
 RESULTS_PER_PAGE = 10
 
-INDUSTRIES = [
-    "business--conferences",
-    "technology--conferences",
-    "health--conferences",
-    "finance--conferences"
-]
 
-HTML_TEMPLATE = """
-<!doctype html>
-<html>
-<head>
-    <title>Conference Explorer</title>
-    <style>
-        body { font-family: Arial; margin: 40px; background-color: #f4f6f8; }
-        h1 { color: #333; }
-        form { margin-bottom: 20px; }
-        input, select { padding: 8px; margin-right: 10px; }
-        button { padding: 8px 14px; }
-        .result {
-            background: white;
-            padding: 15px;
-            margin-top: 15px;
-            border-radius: 6px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .pagination { margin-top: 20px; }
-        .pagination a {
-            margin-right: 10px;
-            text-decoration: none;
-            font-weight: bold;
-        }
-        .count { margin-bottom: 15px; color: #666; }
-    </style>
-</head>
-<body>
+def query_database(
+    industry=None,
+    location_type=None,
+    start_date=None,
+    end_date=None,
+    page=1
+):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
-<h1>Conference Explorer</h1>
+    base_query = "FROM conferences WHERE 1=1"
+    params = []
 
-<form method="GET">
-    <input type="text" name="keyword" placeholder="Keyword"
-        value="{{ keyword or '' }}">
+    if industry:
+        base_query += " AND industry = ?"
+        params.append(industry)
 
-    <select name="industry">
-        <option value="">All Industries</option>
-        {% for ind in industries %}
-            <option value="{{ ind }}"
-                {% if ind == industry %}selected{% endif %}>
-                {{ ind }}
-            </option>
-        {% endfor %}
-    </select>
+    if location_type:
+        base_query += " AND location_type = ?"
+        params.append(location_type)
 
-    <button type="submit">Search</button>
-</form>
+    if start_date:
+        base_query += " AND start_datetime >= ?"
+        params.append(start_date)
 
-<div class="count">
-    Showing {{ results|length }} of {{ total }} result(s)
-</div>
+    if end_date:
+        base_query += " AND start_datetime <= ?"
+        params.append(end_date)
 
-{% for r in results %}
-<div class="result">
-    <strong>{{ r.title }}</strong><br>
-    <b>Industry:</b> {{ r.industry }}<br>
-    <b>Date:</b> {{ r.date }}<br>
-    <b>Location:</b> {{ r.location }}<br>
-    <a href="{{ r.link }}" target="_blank">View Event</a>
-</div>
-{% endfor %}
+    # Total count
+    cursor.execute(f"SELECT COUNT(*) {base_query}", params)
+    total = cursor.fetchone()[0]
 
-<div class="pagination">
-    {% if page > 1 %}
-        <a href="?keyword={{ keyword or '' }}&industry={{ industry or '' }}&page={{ page-1 }}">⬅ Previous</a>
-    {% endif %}
+    total_pages = math.ceil(total / RESULTS_PER_PAGE) if total else 1
+    offset = (page - 1) * RESULTS_PER_PAGE
 
-    {% if page < total_pages %}
-        <a href="?keyword={{ keyword or '' }}&industry={{ industry or '' }}&page={{ page+1 }}">Next ➡</a>
-    {% endif %}
-</div>
-
-</body>
-</html>
-"""
-
-# ----------------------------
-# WEB UI ROUTE
-# ----------------------------
-@app.route("/", methods=["GET"])
-def home():
-    keyword = request.args.get("keyword")
-    industry = request.args.get("industry")
-    page = request.args.get("page", 1, type=int)
-
-    keyword = keyword or None
-    industry = industry or None
-
-    results, total, total_pages = query_database(keyword, industry, page)
-
-    return render_template_string(
-        HTML_TEMPLATE,
-        results=results,
-        total=total,
-        page=page,
-        total_pages=total_pages,
-        keyword=keyword,
-        industry=industry,
-        industries=INDUSTRIES
+    cursor.execute(
+        f"""
+        SELECT *
+        {base_query}
+        ORDER BY start_datetime ASC
+        LIMIT ? OFFSET ?
+        """,
+        params + [RESULTS_PER_PAGE, offset]
     )
 
+    results = [dict(row) for row in cursor.fetchall()]
 
-# ----------------------------
-# API ROUTE
-# ----------------------------
-@app.route("/api/conferences", methods=["GET"])
-def api_conferences():
-    keyword = request.args.get("keyword")
+    conn.close()
+
+    return results, total, total_pages
+
+
+# -----------------------------------
+# ROOT
+# -----------------------------------
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "message": "Conference Intelligence API is running.",
+        "endpoints": {
+            "GET /conferences": "Query conferences with filters"
+        }
+    })
+
+
+# -----------------------------------
+# MAIN CONFERENCES ENDPOINT
+# -----------------------------------
+@app.route("/conferences", methods=["GET"])
+def get_conferences():
+
     industry = request.args.get("industry")
+    location_type = request.args.get("location_type")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
     page = request.args.get("page", 1, type=int)
 
-    keyword = keyword or None
-    industry = industry or None
-
-    results, total, total_pages = query_database(keyword, industry, page)
+    results, total, total_pages = query_database(
+        industry=industry,
+        location_type=location_type,
+        start_date=start_date,
+        end_date=end_date,
+        page=page
+    )
 
     return jsonify({
         "success": True,
@@ -141,8 +107,5 @@ def api_conferences():
     })
 
 
-# ----------------------------
-# RUN APP
-# ----------------------------
 if __name__ == "__main__":
     app.run(debug=True)
