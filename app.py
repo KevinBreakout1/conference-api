@@ -57,13 +57,15 @@ def get_conferences():
     total_pages = math.ceil(total / RESULTS_PER_PAGE) if total else 1
 
     return jsonify({
-        "success": True,
+        "events": results,
+        "pagination": {
         "page": page,
         "per_page": RESULTS_PER_PAGE,
         "total": total,
-        "total_pages": total_pages,
-        "results": results
-    })
+        "total_pages": total_pages
+    }
+})
+
 
 
 if __name__ == "__main__":
