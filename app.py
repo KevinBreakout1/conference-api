@@ -15,6 +15,7 @@ def query_database(
     location_type=None,
     start_date=None,
     end_date=None,
+    keyword=None,
     page=1
 ):
     conn = sqlite3.connect(DB_NAME)
@@ -23,6 +24,14 @@ def query_database(
 
     base_query = "FROM conferences WHERE 1=1"
     params = []
+    if keyword:
+        base_query += """
+        AND (
+        title LIKE ? COLLATE NOCASE
+        OR description LIKE ? COLLATE NOCASE
+    )
+    """
+    params.extend([f"%{keyword}%", f"%{keyword}%"])
 
     if industry:
         base_query += " AND industry = ?"
@@ -87,6 +96,7 @@ def get_conferences():
     location_type = request.args.get("location_type")
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
+    keyword = request.args.get("keyword")
     page = request.args.get("page", 1, type=int)
 
     results, total, total_pages = query_database(
@@ -94,6 +104,7 @@ def get_conferences():
         location_type=location_type,
         start_date=start_date,
         end_date=end_date,
+        keyword=keyword,
         page=page
     )
 

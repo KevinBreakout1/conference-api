@@ -13,27 +13,23 @@ DB_NAME = "conferences.db"
 BASE_URL = "https://api.predicthq.com/v1/events/"
 
 
-def map_category_to_industry(category):
-    """
-    Map PredictHQ categories to your internal industry labels.
-    You can expand this mapping later.
-    """
-    mapping = {
-        "conferences": "business",
-        "expos": "business",
-        "academic": "technology",
-        "community": "other",
-        "sports": "other",
-        "performing-arts": "other"
-    }
-    return mapping.get(category, "other")
+def map_category_to_industry(event):
+    labels = event.get("phq_labels", [])
+
+    for label in labels:
+        name = label.get("label")
+
+        if name == "science-and-technology":
+            return "technology"
+        if name == "education-and-careers":
+            return "education"
+        if name == "health":
+            return "healthcare"
+
+    return "business"
 
 
 def fetch_events():
-    """
-    Fetch conference events from PredictHQ.
-    """
-
     if not API_KEY:
         print("ERROR: PREDICTHQ_API_KEY not found in .env file.")
         return []
@@ -46,7 +42,7 @@ def fetch_events():
     params = {
         "category": "conferences",
         "limit": 50,
-       "active.gte": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "active.gte": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "sort": "start"
     }
 
@@ -65,10 +61,6 @@ def fetch_events():
 
 
 def normalize_and_save(events):
-    """
-    Normalize PredictHQ event data to your database schema and insert.
-    """
-
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
@@ -85,18 +77,21 @@ def normalize_and_save(events):
 
             registration_url = event.get("url") or f"https://www.predicthq.com/events/{external_id}"
 
-            category = event.get("category")
-            industry = map_category_to_industry(category)
+            industry = map_category_to_industry(event)
 
-            # PredictHQ marks virtual events differently
-            location = event.get("location")
-            location_type = "online" if event.get("virtual", False) else "in_person"
-
+            # Improved location handling
+            location_type = "in_person"
             location_name = None
-            if location and isinstance(location, list) and len(location) == 2:
-                location_name = f"{location[0]}, {location[1]}"
 
-            # Skip if required fields missing
+            geo = event.get("geo")
+
+            if geo and geo.get("address"):
+                location_name = geo["address"].get("formatted_address")
+            else:
+                location = event.get("location")
+                if location and isinstance(location, list) and len(location) == 2:
+                    location_name = f"{location[0]}, {location[1]}"
+
             if not all([external_id, title, start_datetime, registration_url]):
                 continue
 
@@ -143,7 +138,6 @@ def main():
     print("Fetching conferences from PredictHQ...")
     events = fetch_events()
     print(f"Fetched {len(events)} events.")
-    print(events[0])
     normalize_and_save(events)
 
 
