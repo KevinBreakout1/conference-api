@@ -1,8 +1,10 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import sqlite3
 import math
 
 app = Flask(__name__)
+CORS(app)
 
 DB_NAME = "conferences.db"
 RESULTS_PER_PAGE = 10
