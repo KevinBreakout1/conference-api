@@ -8,19 +8,29 @@ DB_NAME = "conferences.db"
 RESULTS_PER_PAGE = 10
 
 
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 @app.route("/", methods=["GET"])
 def home():
-    return "Conference API is running."
+    return jsonify({
+        "message": "Conference API is running.",
+        "endpoints": {
+            "GET /events": "List events with pagination and filters"
+        }
+    })
 
 
-@app.route("/api/conferences", methods=["GET"])
-def get_conferences():
+@app.route("/events", methods=["GET"])
+def get_events():
     page = request.args.get("page", 1, type=int)
     industry = request.args.get("industry")
     keyword = request.args.get("keyword")
 
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     base_query = "FROM conferences WHERE 1=1"
@@ -34,11 +44,13 @@ def get_conferences():
         base_query += " AND title LIKE ?"
         params.append(f"%{keyword}%")
 
+    # Count total records
     cursor.execute(f"SELECT COUNT(*) {base_query}", params)
     total = cursor.fetchone()[0]
 
     offset = (page - 1) * RESULTS_PER_PAGE
 
+    # Fetch paginated results
     cursor.execute(
         f"""
         SELECT *
@@ -59,13 +71,12 @@ def get_conferences():
     return jsonify({
         "events": results,
         "pagination": {
-        "page": page,
-        "per_page": RESULTS_PER_PAGE,
-        "total": total,
-        "total_pages": total_pages
-    }
-})
-
+            "page": page,
+            "per_page": RESULTS_PER_PAGE,
+            "total": total,
+            "total_pages": total_pages
+        }
+    })
 
 
 if __name__ == "__main__":
