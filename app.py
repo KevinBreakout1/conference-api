@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 DB_NAME = "conferences.db"
-RESULTS_PER_PAGE = 10
+DEFAULT_PER_PAGE = 10
 
 
 def get_db_connection():
@@ -29,8 +29,10 @@ def home():
 @app.route("/events", methods=["GET"])
 def get_events():
     page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("limit", DEFAULT_PER_PAGE, type=int)
+
     industry = request.args.get("industry")
-    keyword = request.args.get("keyword")
+    search = request.args.get("search")
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -42,17 +44,16 @@ def get_events():
         base_query += " AND industry = ?"
         params.append(industry)
 
-    if keyword:
+    if search:
         base_query += " AND title LIKE ?"
-        params.append(f"%{keyword}%")
+        params.append(f"%{search}%")
 
-    # Count total records
+    # Count total matching rows
     cursor.execute(f"SELECT COUNT(*) {base_query}", params)
     total = cursor.fetchone()[0]
 
-    offset = (page - 1) * RESULTS_PER_PAGE
+    offset = (page - 1) * per_page
 
-    # Fetch paginated results
     cursor.execute(
         f"""
         SELECT *
@@ -60,7 +61,7 @@ def get_events():
         ORDER BY start_datetime ASC
         LIMIT ? OFFSET ?
         """,
-        params + [RESULTS_PER_PAGE, offset]
+        params + [per_page, offset]
     )
 
     rows = cursor.fetchall()
@@ -68,13 +69,13 @@ def get_events():
 
     results = [dict(row) for row in rows]
 
-    total_pages = math.ceil(total / RESULTS_PER_PAGE) if total else 1
+    total_pages = math.ceil(total / per_page) if total else 1
 
     return jsonify({
         "events": results,
         "pagination": {
             "page": page,
-            "per_page": RESULTS_PER_PAGE,
+            "per_page": per_page,
             "total": total,
             "total_pages": total_pages
         }
